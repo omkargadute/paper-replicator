@@ -8,6 +8,9 @@ from rich.panel import Panel
 from rich.table import Table
 
 from paperrep.comparator.numeric_comparator import NumericComparator
+from paperrep.extractors.claim_extractor import ClaimExtractor
+from paperrep.parser.pdf_loader import PDFLoader
+from paperrep.pipeline import ReplicationPipeline
 from paperrep.provenance.hasher import hash_file
 from paperrep.schemas.claim import CitationCoordinate, ClaimSpec, ClaimType
 from paperrep.schemas.execution import ExecutionRun, ExecutionStatus, ResourceTelemetry
@@ -31,6 +34,107 @@ def version_cmd():
             border_style="cyan",
         )
     )
+
+
+@app.command("run")
+def run_cmd(
+    pdf_path: Path = typer.Argument(..., help="Path to scientific research paper PDF"),
+    claim_id: Optional[str] = typer.Option(None, "--claim", "-c", help="Specific claim ID to target (e.g. CLM_001)"),
+    output_dir: Path = typer.Option(Path("./reproduction_report"), "--output-dir", "-o", help="Output directory"),
+    strict: float = typer.Option(0.5, "--strict", help="Strict tolerance threshold (default 0.5%)"),
+    loose: float = typer.Option(2.0, "--loose", help="Loose tolerance threshold (default 2.0%)"),
+    timeout: int = typer.Option(1800, "--timeout", help="Watchdog timeout in seconds"),
+    gpu: bool = typer.Option(False, "--gpu", help="Require GPU allocation"),
+):
+    """Execute end-to-end scientific paper replication and compile audit report."""
+    if not pdf_path.exists():
+        console.print(f"[bold red]Error:[/bold red] PDF file not found: {pdf_path}")
+        raise typer.Exit(1)
+
+    console.print(f"[bold cyan]Starting PaperReplicator on:[/bold cyan] {pdf_path.name}")
+    
+    pipeline = ReplicationPipeline(
+        strict_tolerance=strict,
+        loose_tolerance=loose,
+        timeout_seconds=timeout,
+        gpu_required=gpu,
+    )
+
+    def print_progress(msg: str):
+        console.print(f"[dim]{msg}[/dim]")
+
+    report = pipeline.run(
+        paper_path=pdf_path,
+        claim_id=claim_id,
+        output_dir=output_dir,
+        progress_callback=print_progress,
+    )
+
+    # Render summary card
+    verdict = report.verdict
+    color = "green" if verdict.within_tolerance else "red"
+    console.print(
+        Panel(
+            f"[bold]Target Claim:[/bold] {report.evaluated_claim.statement}\n"
+            f"[bold]Published Value:[/bold] {verdict.published_value:.2f}\n"
+            f"[bold]Reproduced Value:[/bold] {verdict.reproduced_value if verdict.reproduced_value is not None else 'N/A'}\n"
+            f"[bold]Verdict:[/bold] [{color}]{verdict.verdict_status.value}[/{color}]\n"
+            f"[bold]Reports Generated:[/bold] {output_dir.resolve()}",
+            title="[Audit] Replication Audit Complete",
+            border_style=color,
+        )
+    )
+
+
+@app.command("parse")
+def parse_cmd(
+    pdf_path: Path = typer.Argument(..., help="Path to research paper PDF"),
+):
+    """Parse scientific paper PDF and display extracted sections and tables."""
+    if not pdf_path.exists():
+        console.print(f"[bold red]Error:[/bold red] File not found: {pdf_path}")
+        raise typer.Exit(1)
+
+    loader = PDFLoader()
+    doc = loader.load(pdf_path)
+
+    console.print(Panel.fit(f"[bold cyan]Paper Document:[/bold cyan] {doc.metadata.title}\nSHA-256: {doc.file_hash_sha256}"))
+    console.print(f"Authors: {', '.join(doc.metadata.authors) if doc.metadata.authors else 'Unknown'}")
+    console.print(f"Abstract: {doc.metadata.abstract[:200]}..." if doc.metadata.abstract else "No abstract detected")
+    console.print(f"Extracted Sections: {len(doc.sections)} | Tables: {len(doc.tables)} | URLs: {len(doc.extracted_urls)}")
+
+
+@app.command("claims")
+def claims_cmd(
+    pdf_path: Path = typer.Argument(..., help="Path to research paper PDF"),
+):
+    """Extract verifiable empirical claims from a research paper."""
+    if not pdf_path.exists():
+        console.print(f"[bold red]Error:[/bold red] File not found: {pdf_path}")
+        raise typer.Exit(1)
+
+    loader = PDFLoader()
+    doc = loader.load(pdf_path)
+    extractor = ClaimExtractor()
+    registry = extractor.extract_claims(doc)
+
+    table = Table(title=f"Extracted Claims ({doc.metadata.title[:40]}...)", border_style="cyan")
+    table.add_column("Claim ID", style="bold cyan")
+    table.add_column("Metric", style="yellow")
+    table.add_column("Published", style="green")
+    table.add_column("Dataset", style="white")
+    table.add_column("Page", style="dim")
+
+    for c in registry.claims:
+        table.add_row(
+            c.claim_id,
+            c.metric_name,
+            f"{c.published_value:.2f}" + ("%" if c.is_percentage else ""),
+            c.dataset_name,
+            str(c.citation.page_number),
+        )
+
+    console.print(table)
 
 
 @app.command("compare")
@@ -78,7 +182,7 @@ def compare_cmd(
     table.add_row("Reproduced Value", f"{verdict.reproduced_value:.4f}")
     table.add_row("Absolute Delta", f"{verdict.absolute_delta:.4f}")
     table.add_row("Relative Error", f"{verdict.relative_error_percent:.2f}%")
-    table.add_row("Strict Tolerance (±)", f"{verdict.strict_tolerance_applied}")
+    table.add_row("Strict Tolerance (+/-)", f"{verdict.strict_tolerance_applied}")
     table.add_row("Verdict Status", f"[bold]{verdict.verdict_status.value}[/bold]")
 
     console.print(table)

@@ -60,6 +60,7 @@ coverage.xml
 sandbox_scratch/
 runs/
 reproduction_report/
+examples_out/
 *.log
 
 # Sensitive environment variables

@@ -1,9 +1,10 @@
 """Host-side out-of-band execution watchdog timer and process supervisor."""
 
+import os
 import subprocess
 import threading
 import time
-from typing import Optional, Tuple
+from typing import Dict, Optional, Tuple
 from paperrep.schemas.execution import ExecutionStatus, ResourceTelemetry
 
 
@@ -21,6 +22,7 @@ class ExecutionWatchdog:
         self,
         command_args: list[str],
         cwd: Optional[str] = None,
+        env: Optional[Dict[str, str]] = None,
     ) -> Tuple[int, str, str, ResourceTelemetry, ExecutionStatus]:
         """Executes a command with external watchdog enforcement.
         
@@ -30,12 +32,15 @@ class ExecutionWatchdog:
         start_time = time.time()
         self._timed_out = False
 
+        exec_env = env if env is not None else os.environ.copy()
+
         process = subprocess.Popen(
             command_args,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
             cwd=cwd,
+            env=exec_env,
         )
 
         def _kill_on_timeout():

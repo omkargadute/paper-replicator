@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Reproducibility Audit: {{ report.paper_metadata.title }}</title>
+    <style>
+        :root {
+            --primary: #1a73e8;
+            --success: #28a745;
+            --warning: #ffc107;
+            --danger: #dc3545;
+            --bg: #f8f9fa;
+            --card-bg: #ffffff;
+            --text: #212529;
+            --border: #e9ecef;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--bg);
+            color: var(--text);
+            line-height: 1.6;
+            margin: 0;
+            padding: 40px 20px;
+        }
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            background: var(--card-bg);
+            padding: 40px;
+            border-radius: 12px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+            border: 1px solid var(--border);
+        }
+        header {
+            border-bottom: 2px solid var(--border);
+            padding-bottom: 20px;
+            margin-bottom: 30px;
+        }
+        h1 { margin: 0 0 10px 0; font-size: 26px; }
+        .badge {
+            display: inline-block;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-weight: bold;
+            font-size: 14px;
+            text-transform: uppercase;
+        }
+        .badge-exact { background: #d4edda; color: #155724; }
+        .badge-partial { background: #fff3cd; color: #856404; }
+        .badge-discrepant { background: #f8d7da; color: #721c24; }
+        .badge-failed { background: #e2e3e5; color: #383d41; }
+        .metric-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin: 30px 0;
+        }
+        .metric-card {
+            background: var(--bg);
+            padding: 20px;
+            border-radius: 8px;
+            text-align: center;
+            border: 1px solid var(--border);
+        }
+        .metric-value { font-size: 28px; font-weight: bold; margin-top: 5px; }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+        th, td {
+            padding: 12px 15px;
+            text-align: left;
+            border-bottom: 1px solid var(--border);
+        }
+        th { background-color: var(--bg); }
+        code {
+            background: #f1f3f5;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 13px;
+        }
+        .hypothesis-card {
+            background: #fff;
+            border-left: 4px solid var(--primary);
+            padding: 15px;
+            margin-bottom: 15px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.03);
+            border-radius: 0 8px 8px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🔬 Scientific Reproducibility Audit</h1>
+            <div>Target: <strong>{{ report.paper_metadata.title }}</strong></div>
+            <div>Authors: <strong>{{ report.paper_metadata.authors | join(', ') if report.paper_metadata.authors else "Unknown" }}</strong></div>
+            <div style="margin-top: 15px;">
+                {% if report.verdict.verdict_status.value == "EXACT_REPLICATION" %}
+                    <span class="badge badge-exact">✓ EXACT REPLICATION</span>
+                {% elif report.verdict.verdict_status.value == "PARTIAL_REPLICATION" %}
+                    <span class="badge badge-partial">⚠ PARTIAL REPLICATION</span>
+                {% elif report.verdict.verdict_status.value == "DISCREPANT" %}
+                    <span class="badge badge-discrepant">✗ DISCREPANT FINDINGS</span>
+                {% else %}
+                    <span class="badge badge-failed">⚠ {{ report.verdict.verdict_status.value }}</span>
+                {% endif %}
+            </div>
+        </header>
+
+        <h2>Empirical Verification Summary</h2>
+        <div class="metric-grid">
+            <div class="metric-card">
+                <div>Published Claim</div>
+                <div class="metric-value">{{ "%.2f"|format(report.verdict.published_value) }}</div>
+            </div>
+            <div class="metric-card">
+                <div>Reproduced Finding</div>
+                <div class="metric-value" style="color: {{ 'var(--success)' if report.verdict.within_tolerance else 'var(--danger)' }};">
+                    {{ "%.2f"|format(report.verdict.reproduced_value) if report.verdict.reproduced_value is not none else "N/A" }}
+                </div>
+            </div>
+            <div class="metric-card">
+                <div>Absolute Delta</div>
+                <div class="metric-value">{{ "%.2f"|format(report.verdict.absolute_delta) if report.verdict.absolute_delta is not none else "N/A" }}</div>
+            </div>
+        </div>
+
+        <h2>Provenance & Target Claim</h2>
+        <table>
+            <tr><th>Claim ID</th><td><code>{{ report.evaluated_claim.claim_id }}</code></td></tr>
+            <tr><th>Claim Statement</th><td>{{ report.evaluated_claim.statement }}</td></tr>
+            <tr><th>Citation</th><td>Page {{ report.evaluated_claim.citation.page_number }}{% if report.evaluated_claim.citation.table_identifier %}, {{ report.evaluated_claim.citation.table_identifier }}{% endif %}</td></tr>
+            <tr><th>PDF SHA-256</th><td><code>{{ report.provenance.pdf_sha256 }}</code></td></tr>
+            <tr><th>Docker Digest</th><td><code>{{ report.execution_run.container_image_digest }}</code></td></tr>
+            <tr><th>Random Seed</th><td><code>{{ report.execution_run.seed }}</code></td></tr>
+        </table>
+
+        {% if report.verdict.diagnosis %}
+        <h2>Forensic Discrepancy Diagnosis</h2>
+        <p><strong>Executive Analysis:</strong> {{ report.verdict.diagnosis.diagnostic_summary }}</p>
+        {% for hyp in report.verdict.diagnosis.ranked_hypotheses %}
+        <div class="hypothesis-card">
+            <h3>{{ loop.index }}. {{ hyp.category | replace('_', ' ') | title }} (Confidence: {{ (hyp.confidence_score * 100)|round }}%)</h3>
+            <p>{{ hyp.explanation }}</p>
+            {% if hyp.suggested_verification_test %}
+            <p><em>Suggested verification: {{ hyp.suggested_verification_test }}</em></p>
+            {% endif %}
+        </div>
+        {% endfor %}
+        {% endif %}
+
+        <footer style="margin-top: 40px; border-top: 1px solid var(--border); padding-top: 15px; font-size: 12px; color: #6c757d;">
+            Generated by PaperReplicator v0.1.0 on {{ report.generated_at.strftime('%Y-%m-%d %H:%M:%S UTC') }}.
+        </footer>
+    </div>
+</body>
+</html>
