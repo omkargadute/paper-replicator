@@ -1,0 +1,33 @@
+# syntax=docker/dockerfile:1
+# Hardened Sandboxed Execution Environment for PaperReplicator
+FROM python:3.11-slim-bookworm
+
+# Prevent interactive prompts during installation
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1
+
+# Install minimal OS dependencies for ML builds and Git cloning
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    git \
+    curl \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create unprivileged runtime user
+RUN groupadd -g 1000 sandboxgroup && \
+    useradd -u 1000 -g sandboxgroup -m -s /bin/bash sandboxuser
+
+# Create standard sandbox directory hierarchy
+RUN mkdir -p /workspace/code /workspace/data /workspace/output && \
+    chown -R sandboxuser:sandboxgroup /workspace
+
+WORKDIR /workspace
+
+# Switch to unprivileged user
+USER sandboxuser
+
+# Default command
+CMD ["bash"]

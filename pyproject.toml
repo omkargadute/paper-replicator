@@ -1,0 +1,55 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "paper-replicator"
+version = "0.1.0"
+description = "Autonomous Scientific Paper Replication & Evidence-Driven Verification Engine"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "Apache-2.0" }
+authors = [
+    { name = "Omkar Gadute", email = "omkargadute@gmail.com" }
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: OS Independent",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+dependencies = [
+    "pydantic>=2.5.0",
+    "typer[all]>=0.9.0",
+    "rich>=13.0.0",
+    "pyyaml>=6.0",
+    "docker>=7.0.0",
+    "litellm>=1.20.0",
+    "jinja2>=3.1.0",
+    "pymupdf>=1.23.0"
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.0",
+    "pytest-cov>=4.1.0",
+    "pytest-mock>=3.12.0",
+    "black>=23.9.0",
+    "ruff>=0.1.0",
+    "mypy>=1.6.0"
+]
+
+[project.scripts]
+paperrep = "paperrep.cli:app"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["paperrep*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "-v --tb=short"

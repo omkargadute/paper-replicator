@@ -1,0 +1,25 @@
+# PaperReplicator System Configuration
+system:
+  app_name: "PaperReplicator"
+  version: "0.1.0"
+  log_level: "INFO"
+
+sandbox:
+  image_tag: "paperrep-sandbox:latest"
+  dockerfile_path: "Dockerfile.sandbox"
+  memory_limit: "8g"
+  cpu_limit: 4.0
+  pids_limit: 100
+  default_timeout_sec: 1800 # 30 minutes
+  network_during_exec: "none" # Disables networking during evaluation
+  output_dir: "./runs"
+
+tolerance:
+  strict_percentage: 0.5 # <= 0.5% absolute difference = EXACT
+  loose_percentage: 2.0  # <= 2.0% absolute difference = APPROXIMATE
+
+models:
+  primary_llm: "gemini/gemini-1.5-pro"
+  fallback_llm: "anthropic/claude-3-5-sonnet-20240620"
+  fast_llm: "gemini/gemini-1.5-flash"
+  temperature: 0.0
