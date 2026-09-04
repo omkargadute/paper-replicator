@@ -61,6 +61,7 @@ sandbox_scratch/
 runs/
 reproduction_report/
 examples_out/
+papers/
 *.log
 
 # Sensitive environment variables

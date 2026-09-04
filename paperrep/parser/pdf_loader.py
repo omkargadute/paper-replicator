@@ -1,10 +1,12 @@
 """PDF document loader and layout-aware text extraction using PyMuPDF."""
 
 import re
+import unicodedata
 from pathlib import Path
 from typing import List, Optional, Tuple
-import fitz  # PyMuPDF
+import pymupdf as fitz
 
+from paperrep.parser.table_extractor import TableExtractor
 from paperrep.provenance.hasher import hash_file
 from paperrep.schemas.paper import PaperDocument, PaperMetadata, PaperSection, PaperTable
 
@@ -18,14 +20,7 @@ class PDFLoader:
         )
 
     def load(self, file_path: str | Path) -> PaperDocument:
-        """Loads and parses a PDF into a structured PaperDocument.
-        
-        Args:
-            file_path: Path to the research paper PDF.
-            
-        Returns:
-            Structured PaperDocument with sections, metadata, tables, and file hash.
-        """
+        """Loads and parses a PDF into a structured PaperDocument."""
         path = Path(file_path).resolve()
         if not path.is_file():
             raise FileNotFoundError(f"PDF file not found: {path}")
@@ -53,10 +48,9 @@ class PDFLoader:
         author_str = meta.get("author", "").strip()
         authors = [a.strip() for a in re.split(r"[,;]", author_str) if a.strip()] if author_str else []
 
-        # Inspect first page for title and abstract heuristics if metadata is sparse
         abstract = ""
         if len(doc) > 0:
-            first_page_text = doc[0].get_text()
+            first_page_text = unicodedata.normalize("NFKD", doc[0].get_text())
             abstract_match = re.search(r"(?i)\babstract\b[:\s]*(.+?)(?=\n\s*(?:1[\.\s]|introduction|keywords))", first_page_text, re.DOTALL)
             if abstract_match:
                 abstract = re.sub(r"\s+", " ", abstract_match.group(1)).strip()
@@ -74,10 +68,10 @@ class PDFLoader:
 
         for page_num in range(len(doc)):
             page = doc[page_num]
-            text = page.get_text()
+            raw_text = page.get_text()
+            text = unicodedata.normalize("NFKD", raw_text)
             full_text_pages.append((page_num + 1, text))
 
-            # Extract URLs from page text and links
             for match in self.url_regex.finditer(text):
                 all_urls.append(match.group(0).rstrip(".,;"))
 
@@ -86,7 +80,6 @@ class PDFLoader:
                 if uri and uri.startswith("http"):
                     all_urls.append(uri.rstrip(".,;"))
 
-        # Chunk into sections using heading patterns
         sections: List[PaperSection] = []
         heading_pattern = re.compile(r"^(?:(\d+(?:\.\d+)*)\s+([A-Z][^\n]+)|([A-Z\s]{4,}))$", re.MULTILINE)
 
@@ -103,7 +96,6 @@ class PDFLoader:
 
                 heading_match = heading_pattern.match(clean_line)
                 if heading_match and len(clean_line) < 80:
-                    # Flush previous section
                     if current_content_lines:
                         sections.append(
                             PaperSection(
@@ -119,7 +111,6 @@ class PDFLoader:
                 else:
                     current_content_lines.append(clean_line)
 
-        # Flush final section
         if current_content_lines:
             sections.append(
                 PaperSection(
@@ -132,13 +123,15 @@ class PDFLoader:
         return sections, all_urls
 
     def _extract_tables(self, doc: fitz.Document) -> List[PaperTable]:
-        """Extracts structured tables using PyMuPDF table detection."""
+        """Extracts structured tables using PyMuPDF table detection and text-table heuristics."""
         extracted_tables: List[PaperTable] = []
 
         for page_num in range(len(doc)):
             page = doc[page_num]
+            text = unicodedata.normalize("NFKD", page.get_text())
+
+            # 1. Try PyMuPDF's built-in table finder
             try:
-                # Use PyMuPDF's built-in table finder (available in PyMuPDF >= 1.23)
                 tables = page.find_tables()
                 for idx, tab in enumerate(tables):
                     df_data = tab.extract()
@@ -151,7 +144,6 @@ class PDFLoader:
                         for row in df_data[1:]
                     ]
 
-                    # Build markdown representation
                     md_lines = ["| " + " | ".join(headers) + " |"]
                     md_lines.append("| " + " | ".join(["---"] * len(headers)) + " |")
                     for row in rows:
@@ -169,7 +161,11 @@ class PDFLoader:
                         )
                     )
             except Exception:
-                # Graceful fallback if page has unusual layout
-                continue
+                pass
+
+            # 2. Text-table heuristic fallback for borderless LaTeX tables
+            if not extracted_tables:
+                text_tables = TableExtractor.extract_text_tables(text, page_num + 1)
+                extracted_tables.extend(text_tables)
 
         return extracted_tables
